@@ -216,12 +216,23 @@ var infinityTsEnabled = false
 var infinityTsNegative time.Time
 var infinityTsPositive time.Time
 
+const (
+	_infinityString                  = "-infinity"
+	infinityString                   = "infinity"
+	infinityTsEnabledAlready         = "pg: infinity timestamp enalbed already"
+	infinityTsNegativeMustBeSmaller  = "pg: infinity timestamp: negative value must be smaller (before) than positive"
+	infinityTsNotEnabledGot_Infinity = "infinity timestamp(tz) is not enabled, got -infinity"
+	infinityTsNotEnabledGotInfinity  = "infinity timestamp(tz) is not enabled, got infinity"
+)
+
 /**
  * If EnableInfinityTs is not called, "-infinity" and "infinity" will yield error when
  * decoding.
  *
- * If EnableInfinityTs is called once, it enables this driver to decode Postgres'
- * "-infinity" and "infinity" to predefined boundary minimum and maximum time.
+ * If EnableInfinityTs is called with negative >= positive, it will panic
+
+ * If EnableInfinityTs is called once correctly, it enables this driver to decode
+ * Postgres' "-infinity" and "infinity" to predefined boundary minimum and maximum time.
  * When encoding, any time that equals or exceeds predefined minimum or maximum time
  * will be encoded to "-infinity" and "infinity" respectively.
  *
@@ -229,12 +240,16 @@ var infinityTsPositive time.Time
  */
 func EnableInfinityTs(negative time.Time, positive time.Time) {
 	if infinityTsEnabled {
-		panic("pg: infinity timestamp enalbed already")
+		panic(infinityTsEnabledAlready)
+	}
+	if !negative.Before(positive) {
+		panic(infinityTsNegativeMustBeSmaller)
 	}
 	infinityTsEnabled = true
 	infinityTsNegative = negative
 	infinityTsPositive = positive
 }
+
 /**
  * Testing might want to toggle infinityTsEnabled
  */
@@ -248,16 +263,16 @@ func disableInfinityTs() {
 // time.Parse and the Postgres date formatting quirks.
 func parseTs(currentLocation *time.Location, str string) (result time.Time) {
 	switch str {
-	case "-infinity":
+	case _infinityString:
 		if infinityTsEnabled {
 			return infinityTsNegative
 		}
-		errorf("infinity timestamp(tz) is not enabled, got -infinity")
-	case "infinity":
+		errorf(infinityTsNotEnabledGot_Infinity)
+	case infinityString:
 		if infinityTsEnabled {
 			return infinityTsPositive
 		}
-		errorf("infinity timestamp(tz) is not enabled, got infinity")
+		errorf(infinityTsNotEnabledGotInfinity)
 	}
 	monSep := strings.IndexRune(str, '-')
 	year := mustAtoi(str[:monSep])
@@ -354,11 +369,11 @@ func formatTs(t time.Time) (b []byte) {
 	if infinityTsEnabled {
 		// t <= -infinity : ! (t > -infinity)
 		if !t.After(infinityTsNegative) {
-			return []byte("-infinity")
+			return []byte(_infinityString)
 		}
 		// t >= infinity : ! (!t < infinity)
 		if !t.Before(infinityTsPositive) {
-			return []byte("infinity")
+			return []byte(infinityString)
 		}
 	}
 	b = []byte(t.Format(time.RFC3339Nano))

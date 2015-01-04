@@ -248,10 +248,8 @@ func TestInfinityTimestamp(t *testing.T) {
 	defer db.Close()
 	var err error
 	result := time.Time{}
-	_infinityString := "-infinity"
-	infinityString := "infinity"
 	err = db.QueryRow("SELECT $1::timestamp", "-infinity").Scan(&result)
-	expectedErrorString_Infinity := `pq: infinity timestamp(tz) is not enabled, got -infinity`
+	expectedErrorString_Infinity := `pq: ` + infinityTsNotEnabledGot_Infinity
 	if err.Error() != expectedErrorString_Infinity {
 		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorString_Infinity, err)
 	}
@@ -261,7 +259,7 @@ func TestInfinityTimestamp(t *testing.T) {
 	}
 
 	err = db.QueryRow("SELECT $1::timestamp", infinityString).Scan(&result)
-	expectedErrorStringInfinity := fmt.Sprintf("pq: infinity timestamp(tz) is not enabled, got %s", infinityString)
+	expectedErrorStringInfinity := `pq: ` + infinityTsNotEnabledGotInfinity
 	if err.Error() != expectedErrorStringInfinity {
 		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorStringInfinity, err)
 	}
@@ -340,6 +338,17 @@ func TestInfinityTimestamp(t *testing.T) {
 	}
 
 	disableInfinityTs()
+
+	var panicErrorString string
+	func() {
+		defer func() {
+			panicErrorString, _ = recover().(string)
+		}()
+		EnableInfinityTs(y2500, y1500)
+	}()
+	if panicErrorString != infinityTsNegativeMustBeSmaller {
+		t.Errorf("Expected error, \"%s\", got \"%s\"", infinityTsNegativeMustBeSmaller, panicErrorString)
+	}
 }
 
 func TestStringWithNul(t *testing.T) {
