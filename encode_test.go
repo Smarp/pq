@@ -243,6 +243,105 @@ func TestTimestampWithOutTimezone(t *testing.T) {
 	test("2013-01-04T20:14:58.80033Z", "2013-01-04 20:14:58.80033")
 }
 
+func TestInfinityTimestamp(t *testing.T) {
+	db := openTestConn(t)
+	defer db.Close()
+	var err error
+	result := time.Time{}
+	_infinityString := "-infinity"
+	infinityString := "infinity"
+	err = db.QueryRow("SELECT $1::timestamp", "-infinity").Scan(&result)
+	expectedErrorString_Infinity := `pq: infinity timestamp(tz) is not enabled, got -infinity`
+	if err.Error() != expectedErrorString_Infinity {
+		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorString_Infinity, err)
+	}
+	err = db.QueryRow("SELECT $1::timestamptz", "-infinity").Scan(&result)
+	if err.Error() != expectedErrorString_Infinity {
+		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorString_Infinity, err)
+	}
+
+	err = db.QueryRow("SELECT $1::timestamp", infinityString).Scan(&result)
+	expectedErrorStringInfinity := fmt.Sprintf("pq: infinity timestamp(tz) is not enabled, got %s", infinityString)
+	if err.Error() != expectedErrorStringInfinity {
+		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorStringInfinity, err)
+	}
+	err = db.QueryRow("SELECT $1::timestamptz", infinityString).Scan(&result)
+	if err.Error() != expectedErrorStringInfinity {
+		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorStringInfinity, err)
+	}
+
+	y1500 := time.Date(1500, time.January, 1, 0, 0, 0, 0, time.UTC)
+	y2500 := time.Date(2500, time.January, 1, 0, 0, 0, 0, time.UTC)
+	EnableInfinityTs(y1500, y2500)
+
+	err = db.QueryRow("SELECT $1::timestamp", infinityString).Scan(&result)
+	if err != nil {
+		t.Errorf("Scanning infinity, expected no error, got \"%s\"", err)
+	}
+	if !result.Equal(y2500) {
+		t.Errorf("Scanning infinity, expected \"%s\", got \"%s\"", y2500, result)
+	}
+
+	err = db.QueryRow("SELECT $1::timestamptz", infinityString).Scan(&result)
+	if err != nil {
+		t.Errorf("Scanning infinity, expected no error, got \"%s\"", err)
+	}
+	if !result.Equal(y2500) {
+		t.Errorf("Scanning Infinity, expected time \"%s\", got \"%s\"", y2500, result.String())
+	}
+
+	err = db.QueryRow("SELECT $1::timestamp", _infinityString).Scan(&result)
+	if err != nil {
+		t.Errorf("Scanning -infinity, expected no error, got \"%s\"", err)
+	}
+	if !result.Equal(y1500) {
+		t.Errorf("Scanning -infinity, expected time \"%s\", got \"%s\"", y1500, result.String())
+	}
+
+	err = db.QueryRow("SELECT $1::timestamptz", _infinityString).Scan(&result)
+	if err != nil {
+		t.Errorf("Scanning -infinity, expected no error, got \"%s\"", err)
+	}
+	if !result.Equal(y1500) {
+		t.Errorf("Scanning -infinity, expected time \"%s\", got \"%s\"", y1500, result.String())
+	}
+
+	y_1500 := time.Date(-1500, time.January, 1, 0, 0, 0, 0, time.UTC)
+	y11500 := time.Date(11500, time.January, 1, 0, 0, 0, 0, time.UTC)
+	var s string
+	err = db.QueryRow("SELECT $1::timestamp::text", y_1500).Scan(&s)
+	if err != nil {
+		t.Errorf("Encoding -infinity, expected no error, got \"%s\"", err)
+	}
+	if s != _infinityString {
+		t.Errorf("Encoding -infinity, expected \"%s\", got \"%s\"", _infinityString, s)
+	}
+	err = db.QueryRow("SELECT $1::timestamptz::text", y_1500).Scan(&s)
+	if err != nil {
+		t.Errorf("Encoding -infinity, expected no error, got \"%s\"", err)
+	}
+	if s != _infinityString {
+		t.Errorf("Encoding -infinity, expected \"%s\", got \"%s\"", _infinityString, s)
+	}
+
+	err = db.QueryRow("SELECT $1::timestamp::text", y11500).Scan(&s)
+	if err != nil {
+		t.Errorf("Encoding infinity, expected no error, got \"%s\"", err)
+	}
+	if s != infinityString {
+		t.Errorf("Encoding infinity, expected \"%s\", got \"%s\"", infinityString, s)
+	}
+	err = db.QueryRow("SELECT $1::timestamptz::text", y11500).Scan(&s)
+	if err != nil {
+		t.Errorf("Encoding infinity, expected no error, got \"%s\"", err)
+	}
+	if s != infinityString {
+		t.Errorf("Encoding infinity, expected \"%s\", got \"%s\"", infinityString, s)
+	}
+
+	disableInfinityTs()
+}
+
 func TestStringWithNul(t *testing.T) {
 	db := openTestConn(t)
 	defer db.Close()

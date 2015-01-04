@@ -212,11 +212,53 @@ func (c *locationCache) getLocation(offset int) *time.Location {
 	return location
 }
 
+var infinityTsEnabled = false
+var infinityTsNegative time.Time
+var infinityTsPositive time.Time
+
+/**
+ * If EnableInfinityTs is not called, "-infinity" and "infinity" will yield error when
+ * decoding.
+ *
+ * If EnableInfinityTs is called once, it enables this driver to decode Postgres'
+ * "-infinity" and "infinity" to predefined boundary minimum and maximum time.
+ * When encoding, any time that equals or exceeds predefined minimum or maximum time
+ * will be encoded to "-infinity" and "infinity" respectively.
+ *
+ * If EnableInfinityTs is called more than once, it will panic.
+ */
+func EnableInfinityTs(negative time.Time, positive time.Time) {
+	if infinityTsEnabled {
+		panic("pg: infinity timestamp enalbed already")
+	}
+	infinityTsEnabled = true
+	infinityTsNegative = negative
+	infinityTsPositive = positive
+}
+/**
+ * Testing might want to toggle infinityTsEnabled
+ */
+func disableInfinityTs() {
+	infinityTsEnabled = false
+}
+
 // This is a time function specific to the Postgres default DateStyle
 // setting ("ISO, MDY"), the only one we currently support. This
 // accounts for the discrepancies between the parsing available with
 // time.Parse and the Postgres date formatting quirks.
 func parseTs(currentLocation *time.Location, str string) (result time.Time) {
+	switch str {
+	case "-infinity":
+		if infinityTsEnabled {
+			return infinityTsNegative
+		}
+		errorf("infinity timestamp(tz) is not enabled, got -infinity")
+	case "infinity":
+		if infinityTsEnabled {
+			return infinityTsPositive
+		}
+		errorf("infinity timestamp(tz) is not enabled, got infinity")
+	}
 	monSep := strings.IndexRune(str, '-')
 	year := mustAtoi(str[:monSep])
 	daySep := monSep + 3
@@ -309,6 +351,16 @@ func parseTs(currentLocation *time.Location, str string) (result time.Time) {
 // formatTs formats t as time.RFC3339Nano and appends time zone seconds if
 // needed.
 func formatTs(t time.Time) (b []byte) {
+	if infinityTsEnabled {
+		// t <= -infinity : ! (t > -infinity)
+		if !t.After(infinityTsNegative) {
+			return []byte("-infinity")
+		}
+		// t >= infinity : ! (!t < infinity)
+		if !t.Before(infinityTsPositive) {
+			return []byte("infinity")
+		}
+	}
 	b = []byte(t.Format(time.RFC3339Nano))
 	// Need to send dates before 0001 A.D. with " BC" suffix, instead of the
 	// minus sign preferred by Go.
