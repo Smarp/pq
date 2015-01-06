@@ -217,20 +217,20 @@ var infinityTsNegative time.Time
 var infinityTsPositive time.Time
 
 const (
-	_infinityString                  = "-infinity"
-	infinityString                   = "infinity"
-	infinityTsEnabledAlready         = "pg: infinity timestamp enalbed already"
-	infinityTsNegativeMustBeSmaller  = "pg: infinity timestamp: negative value must be smaller (before) than positive"
-	infinityTsNotEnabledGot_Infinity = "infinity timestamp(tz) is not enabled, got -infinity"
-	infinityTsNotEnabledGotInfinity  = "infinity timestamp(tz) is not enabled, got infinity"
+	_infinityString                 = "-infinity"
+	infinityString                  = "infinity"
+	infinityTsEnabledAlready        = "pg: infinity timestamp enalbed already"
+	infinityTsNegativeMustBeSmaller = "pg: infinity timestamp: negative value must be smaller (before) than positive"
 )
 
 /**
- * If EnableInfinityTs is not called, "-infinity" and "infinity" will yield error when
- * decoding.
+ * If EnableInfinityTs is not called, "-infinity" and "infinity" will return
+ * []byte("-infinity") and []byte("infinity") respectively, and potentially
+ * cause error "sql: Scan error on column index 0: unsupported driver -> Scan pair: []uint8 -> *time.Time",
+ * unless the input param is `*interface{}` instead of `*time.Time`
  *
  * If EnableInfinityTs is called with negative >= positive, it will panic
-
+ *
  * If EnableInfinityTs is called once correctly, it enables this driver to decode
  * Postgres' "-infinity" and "infinity" to predefined boundary minimum and maximum time.
  * When encoding, any time that equals or exceeds predefined minimum or maximum time
@@ -261,18 +261,18 @@ func disableInfinityTs() {
 // setting ("ISO, MDY"), the only one we currently support. This
 // accounts for the discrepancies between the parsing available with
 // time.Parse and the Postgres date formatting quirks.
-func parseTs(currentLocation *time.Location, str string) (result time.Time) {
+func parseTs(currentLocation *time.Location, str string) interface{} {
 	switch str {
 	case _infinityString:
 		if infinityTsEnabled {
 			return infinityTsNegative
 		}
-		errorf(infinityTsNotEnabledGot_Infinity)
+		return []byte(_infinityString)
 	case infinityString:
 		if infinityTsEnabled {
 			return infinityTsPositive
 		}
-		errorf(infinityTsNotEnabledGotInfinity)
+		return []byte(infinityString)
 	}
 	monSep := strings.IndexRune(str, '-')
 	year := mustAtoi(str[:monSep])

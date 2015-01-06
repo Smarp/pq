@@ -72,7 +72,11 @@ func tryParse(str string) (t time.Time, err error) {
 			return
 		}
 	}()
-	t = parseTs(nil, str)
+	i := parseTs(nil, str)
+	t, ok := i.(time.Time)
+	if !ok {
+		err = fmt.Errorf("Not a time.Time type, got %#v", i)
+	}
 	return
 }
 
@@ -247,61 +251,78 @@ func TestInfinityTimestamp(t *testing.T) {
 	db := openTestConn(t)
 	defer db.Close()
 	var err error
-	result := time.Time{}
-	err = db.QueryRow("SELECT $1::timestamp", "-infinity").Scan(&result)
-	expectedErrorString_Infinity := `pq: ` + infinityTsNotEnabledGot_Infinity
-	if err.Error() != expectedErrorString_Infinity {
-		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorString_Infinity, err)
-	}
-	err = db.QueryRow("SELECT $1::timestamptz", "-infinity").Scan(&result)
-	if err.Error() != expectedErrorString_Infinity {
-		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorString_Infinity, err)
-	}
+	var resultT time.Time
+	var resultI interface{}
 
-	err = db.QueryRow("SELECT $1::timestamp", infinityString).Scan(&result)
-	expectedErrorStringInfinity := `pq: ` + infinityTsNotEnabledGotInfinity
-	if err.Error() != expectedErrorStringInfinity {
-		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorStringInfinity, err)
+	expectedError := fmt.Errorf(`sql: Scan error on column index 0: unsupported driver -> Scan pair: []uint8 -> *time.Time`)
+	type testCases []struct {
+		Query       string
+		Param       string
+		ExpectedErr error
+		ExpectedVal interface{}
 	}
-	err = db.QueryRow("SELECT $1::timestamptz", infinityString).Scan(&result)
-	if err.Error() != expectedErrorStringInfinity {
-		t.Errorf("Scanning infinity, expected error, \"%s\", got \"%s\"", expectedErrorStringInfinity, err)
+	tc := testCases{
+		{"SELECT $1::timestamp", "-infinity", expectedError, _infinityString},
+		{"SELECT $1::timestamptz", "-infinity", expectedError, _infinityString},
+		{"SELECT $1::timestamp", "infinity", expectedError, infinityString},
+		{"SELECT $1::timestamptz", "infinity", expectedError, infinityString},
+	}
+	// try to assert []byte to time.Time
+	for _, q := range tc {
+		err = db.QueryRow(q.Query, q.Param).Scan(&resultT)
+		if err.Error() != q.ExpectedErr.Error() {
+			t.Errorf("Scanning -/+infinity, expected error, \"%s\", got \"%s\"", q.ExpectedErr, err)
+		}
+	}
+	// yield []byte
+	for _, q := range tc {
+		err = db.QueryRow(q.Query, q.Param).Scan(&resultI)
+		if err != nil {
+			t.Errorf("Scanning -/+infinity, expected no error, got \"%s\"", err)
+		}
+		result, ok := resultI.([]byte)
+		if !ok {
+			t.Errorf("Scanning -/+infinity, expected []byte, got %#v", resultI)
+		}
+		if string(result) != q.ExpectedVal {
+			t.Errorf("Scanning -/+infinity, expected \"%s\", got \"%s\"", q.ExpectedVal, result)
+		}
 	}
 
 	y1500 := time.Date(1500, time.January, 1, 0, 0, 0, 0, time.UTC)
 	y2500 := time.Date(2500, time.January, 1, 0, 0, 0, 0, time.UTC)
 	EnableInfinityTs(y1500, y2500)
 
-	err = db.QueryRow("SELECT $1::timestamp", infinityString).Scan(&result)
+	err = db.QueryRow("SELECT $1::timestamp", infinityString).Scan(&resultT)
 	if err != nil {
 		t.Errorf("Scanning infinity, expected no error, got \"%s\"", err)
 	}
-	if !result.Equal(y2500) {
-		t.Errorf("Scanning infinity, expected \"%s\", got \"%s\"", y2500, result)
+	if !resultT.Equal(y2500) {
+		t.Errorf("Scanning infinity, expected \"%s\", got \"%s\"", y2500, resultT)
 	}
 
-	err = db.QueryRow("SELECT $1::timestamptz", infinityString).Scan(&result)
+	err = db.QueryRow("SELECT $1::timestamptz", infinityString).Scan(&resultT)
 	if err != nil {
 		t.Errorf("Scanning infinity, expected no error, got \"%s\"", err)
 	}
-	if !result.Equal(y2500) {
-		t.Errorf("Scanning Infinity, expected time \"%s\", got \"%s\"", y2500, result.String())
+	if !resultT.Equal(y2500) {
+		t.Errorf("Scanning Infinity, expected time \"%s\", got \"%s\"", y2500, resultT.String())
 	}
 
-	err = db.QueryRow("SELECT $1::timestamp", _infinityString).Scan(&result)
+	err = db.QueryRow("SELECT $1::timestamp", _infinityString).Scan(&resultT)
 	if err != nil {
 		t.Errorf("Scanning -infinity, expected no error, got \"%s\"", err)
 	}
-	if !result.Equal(y1500) {
-		t.Errorf("Scanning -infinity, expected time \"%s\", got \"%s\"", y1500, result.String())
+	if !resultT.Equal(y1500) {
+		t.Errorf("Scanning -infinity, expected time \"%s\", got \"%s\"", y1500, resultT.String())
 	}
 
-	err = db.QueryRow("SELECT $1::timestamptz", _infinityString).Scan(&result)
+	err = db.QueryRow("SELECT $1::timestamptz", _infinityString).Scan(&resultT)
 	if err != nil {
 		t.Errorf("Scanning -infinity, expected no error, got \"%s\"", err)
 	}
-	if !result.Equal(y1500) {
-		t.Errorf("Scanning -infinity, expected time \"%s\", got \"%s\"", y1500, result.String())
+	if !resultT.Equal(y1500) {
+		t.Errorf("Scanning -infinity, expected time \"%s\", got \"%s\"", y1500, resultT.String())
 	}
 
 	y_1500 := time.Date(-1500, time.January, 1, 0, 0, 0, 0, time.UTC)
