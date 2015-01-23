@@ -218,10 +218,10 @@ var infinityTsNegative time.Time
 var infinityTsPositive time.Time
 
 const (
-	_infinityString                 = "-infinity"
-	infinityString                  = "infinity"
-	infinityTsEnabledAlready        = "pg: infinity timestamp enalbed already"
-	infinityTsNegativeMustBeSmaller = "pg: infinity timestamp: negative value must be smaller (before) than positive"
+	negativeInfinityString          = "-infinity"
+	positiveInfinityString          = "infinity"
+	infinityTsEnabledAlready        = "pq: infinity timestamp enabled already"
+	infinityTsNegativeMustBeSmaller = "pq: infinity timestamp: negative value must be smaller (before) than positive"
 )
 
 /**
@@ -264,16 +264,16 @@ func disableInfinityTs() {
 // time.Parse and the Postgres date formatting quirks.
 func parseTs(currentLocation *time.Location, str string) interface{} {
 	switch str {
-	case _infinityString:
+	case negativeInfinityString:
 		if infinityTsEnabled {
 			return infinityTsNegative
 		}
-		return []byte(_infinityString)
-	case infinityString:
+		return []byte(negativeInfinityString)
+	case positiveInfinityString:
 		if infinityTsEnabled {
 			return infinityTsPositive
 		}
-		return []byte(infinityString)
+		return []byte(positiveInfinityString)
 	}
 	monSep := strings.IndexRune(str, '-')
 	// this is Gregorian year, not ISO Year
@@ -373,11 +373,11 @@ func formatTs(t time.Time) (b []byte) {
 	if infinityTsEnabled {
 		// t <= -infinity : ! (t > -infinity)
 		if !t.After(infinityTsNegative) {
-			return []byte(_infinityString)
+			return []byte(negativeInfinityString)
 		}
 		// t >= infinity : ! (!t < infinity)
 		if !t.Before(infinityTsPositive) {
-			return []byte(infinityString)
+			return []byte(positiveInfinityString)
 		}
 	}
 	// Need to send dates before 0001 A.D. with " BC" suffix, instead of the
